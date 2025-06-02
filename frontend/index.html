@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Registro Ventas - Eco Solution LG Chile/Bolivia</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;500;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Roboto', sans-serif;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+
+    header {
+      background-color: #ffffff;
+      padding: 20px 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+
+    header img {
+      height: 60px;
+    }
+
+    main {
+      max-width: 500px;
+      margin: 40px auto;
+      background: #fff;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.05);
+    }
+
+    h1 {
+      font-size: 22px;
+      text-align: center;
+      margin-bottom: 25px;
+      color: #c4002f;
+    }
+
+    label {
+      font-weight: 500;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    input, button {
+      width: 100%;
+      padding: 12px;
+      margin-bottom: 20px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 15px;
+    }
+
+    button {
+      background-color: #c4002f;
+      color: white;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #a60026;
+    }
+
+    .footer {
+      text-align: center;
+      font-size: 13px;
+      color: #888;
+      margin-top: 50px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <img src="logo-lg.png" alt="LG Logo" />
+  </header>
+
+  <main>
+    <h1>Registro ventas - Eco Solution LG Chile/Bolivia</h1>
+    <form id="formularioVenta" enctype="multipart/form-data">
+      <label for="vendedor">Nombre del vendedor</label>
+      <input type="text" id="vendedor" name="vendedor" required />
+
+      <label for="serie">Número de serie</label>
+      <input type="text" id="serie" name="serie" required />
+
+      <label for="foto">Foto de la boleta</label>
+      <input type="file" id="foto" name="foto" accept="image/*" required />
+
+      <button type="submit">ENVIAR</button>
+    </form>
+    <p id="mensaje"></p>
+  </main>
+
+  <div class="footer">
+    &copy; 2025 LG Electronics - Eco Solution Bolivia & Chile
+  </div>
+
+  <script>
+    const form = document.getElementById('formularioVenta');
+    const mensaje = document.getElementById('mensaje');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      mensaje.textContent = '';
+
+      const formData = new FormData(form);
+      try {
+        const res = await fetch('http://localhost:3000/ventas', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await res.json();
+        mensaje.textContent = data.mensaje || data.error;
+        mensaje.style.color = res.ok ? 'green' : 'red';
+
+        if (res.ok) form.reset();
+      } catch (err) {
+        mensaje.textContent = 'Error al enviar la venta.';
+        mensaje.style.color = 'red';
+      }
+    });
+  </script>
+
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
