@@ -9,17 +9,21 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 
-// 📡 Configuración CORS completa
+// 📡 Configuración CORS robusta para móviles y navegadores modernos
 const corsOptions = {
-  origin: true,
+  origin: true, // Permitir cualquier origen
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'x-api-key'],
-  credentials: false,
   optionsSuccessStatus: 204
 };
-app.use(cors(corsOptions));
-// ← Aquí es importante usar '/*' y no '*' para compatibilidad con Express v5  
-app.options('/*', cors(corsOptions)); // Corrige "Missing parameter name" en path-to-regexp :contentReference[oaicite:1]{index=1}
+
+// Middleware para aplicar CORS reflejando el origen
+app.use(cors((req, cb) => {
+  cb(null, corsOptions);
+}));
+
+// Importante: manejar preflight correctamente en todas las rutas
+app.options('/*', cors(corsOptions)); // Corrección para Express v5 :contentReference[oaicite:4]{index=4}
 
 app.use(express.json());
 
@@ -31,12 +35,12 @@ const supabase = createClient(
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// 🔹 Ruta ping para verificar que el servidor está activo
+// 🔹 Ruta ping
 app.get('/', (req, res) => {
   res.send('Servidor LG Ventas 🟢');
 });
 
-// 🔹 Ruta POST /ventas para recibir ventas
+// 🔹 POST /ventas: para enviar ventas con foto
 app.post('/ventas', upload.single('foto'), async (req, res) => {
   const { vendedor, serie } = req.body;
   const foto = req.file;
@@ -48,8 +52,10 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
     const { error: uploadError } = await supabase
       .storage
       .from('ventas-fotos')
-      .upload(nombreArchivo, foto.buffer, { contentType: foto.mimetype, upsert: false });
-
+      .upload(nombreArchivo, foto.buffer, {
+        contentType: foto.mimetype,
+        upsert: false
+      });
     if (uploadError) return res.status(500).json({ error: 'Error al subir la foto', detalle: uploadError.message });
 
     const { data: publicUrlData } = supabase
@@ -62,7 +68,6 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
     const { error: insertError } = await supabase
       .from('ventas')
       .insert([{ nombre_vendedor: vendedor, numero_serie: serie, foto_url: fotoUrl, fecha: fechaUTC }]);
-
     if (insertError) return res.status(500).json({ error: 'Error al guardar la venta', detalle: insertError.message });
 
     res.json({ mensaje: '✅ Venta registrada correctamente' });
@@ -72,13 +77,16 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
   }
 });
 
-// 🔐 Ruta GET /sales protegida con API key
+// 🔐 GET /sales: requiere API key
 app.get('/sales', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
   if (apiKey !== process.env.API_KEY) return res.status(403).json({ error: 'Acceso no autorizado' });
 
   try {
-    const { data, error } = await supabase.from('ventas').select('*').order('fecha', { ascending: false });
+    const { data, error } = await supabase
+      .from('ventas')
+      .select('*')
+      .order('fecha', { ascending: false });
     if (error) return res.status(500).json({ error: 'Error al obtener ventas', detalle: error.message });
     res.json(data);
   } catch (err) {
