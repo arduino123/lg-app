@@ -9,21 +9,15 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 
-// 📡 Configuración CORS robusta para móviles y navegadores modernos
+// CORS para todos los orígenes y métodos GET/POST/OPTIONS
 const corsOptions = {
-  origin: true, // Permitir cualquier origen
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'x-api-key'],
+  origin: true,
+  methods: ['GET','POST','OPTIONS'],
+  allowedHeaders: ['Content-Type','x-api-key'],
   optionsSuccessStatus: 204
 };
-
-// Middleware para aplicar CORS reflejando el origen
-app.use(cors((req, cb) => {
-  cb(null, corsOptions);
-}));
-
-// Importante: manejar preflight correctamente en todas las rutas
-app.options('/*', cors(corsOptions)); // Corrección para Express v5 :contentReference[oaicite:4]{index=4}
+app.use(cors(corsOptions));
+app.options('/*', cors(corsOptions));
 
 app.use(express.json());
 
@@ -31,20 +25,18 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// 🔹 Ruta ping
+// Ruta de ping
 app.get('/', (req, res) => {
   res.send('Servidor LG Ventas 🟢');
 });
 
-// 🔹 POST /ventas: para enviar ventas con foto
+// Registrar venta con foto
 app.post('/ventas', upload.single('foto'), async (req, res) => {
   const { vendedor, serie } = req.body;
   const foto = req.file;
-
   try {
     if (!foto) return res.status(400).json({ error: 'No se recibió la imagen' });
 
@@ -77,7 +69,7 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
   }
 });
 
-// 🔐 GET /sales: requiere API key
+// Consulta de ventas (requiere API key)
 app.get('/sales', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
   if (apiKey !== process.env.API_KEY) return res.status(403).json({ error: 'Acceso no autorizado' });
@@ -95,7 +87,8 @@ app.get('/sales', async (req, res) => {
   }
 });
 
+// Levantar servidor
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Servidor corriendo en puerto ${PORT}, host 0.0.0.0`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
 });
