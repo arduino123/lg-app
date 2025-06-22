@@ -8,7 +8,18 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-app.use(cors());
+
+// 💡 Configuración CORS más robusta
+const corsOptions = {
+  origin: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'x-api-key'],
+  credentials: false,
+  optionsSuccessStatus: 204
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Para asegurar las peticiones OPTIONS :contentReference[oaicite:1]{index=1}
+
 app.use(express.json());
 
 // Cliente Supabase
@@ -17,16 +28,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Multer para manejar la subida de imágenes
+// Multer para subir imágenes
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// 🟢 Ruta raíz: ping para verificar que el servidor está activo
+// 🟢 Ruta GET / para ping/server vivo
 app.get('/', (req, res) => {
   res.send('Servidor LG Ventas 🟢');
 });
 
-// ✅ Ruta pública para subir ventas con imagen
+// ✅ Ruta POST /ventas para registrar ventas
 app.post('/ventas', upload.single('foto'), async (req, res) => {
   const { vendedor, serie } = req.body;
   const foto = req.file;
@@ -42,7 +53,7 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
       .from('ventas-fotos')
       .upload(nombreArchivo, foto.buffer, {
         contentType: foto.mimetype,
-        upsert: false,
+        upsert: false
       });
 
     if (uploadError) {
@@ -63,7 +74,7 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
         nombre_vendedor: vendedor,
         numero_serie: serie,
         foto_url: fotoUrl,
-        fecha: fechaUTC,
+        fecha: fechaUTC
       }]);
 
     if (insertError) {
@@ -78,7 +89,7 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
   }
 });
 
-// 🔐 Ruta protegida para ver ventas (requiere x-api-key en headers)
+// 🔐 Ruta GET /sales — protegida por API key
 app.get('/sales', async (req, res) => {
   const apiKey = req.headers['x-api-key'];
   if (apiKey !== process.env.API_KEY) {
