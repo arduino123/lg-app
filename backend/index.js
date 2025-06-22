@@ -11,17 +11,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Crear cliente Supabase con la clave correcta
+// Cliente Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Configuración de multer
+// Multer para manejar la subida de imágenes
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Ruta para subir ventas con imagen
+// 🟢 Ruta raíz: ping para verificar que el servidor está activo
+app.get('/', (req, res) => {
+  res.send('Servidor LG Ventas 🟢');
+});
+
+// ✅ Ruta pública para subir ventas con imagen
 app.post('/ventas', upload.single('foto'), async (req, res) => {
   const { vendedor, serie } = req.body;
   const foto = req.file;
@@ -32,9 +37,8 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
     }
 
     const nombreArchivo = `ventas/${Date.now()}-${foto.originalname}`;
-
-    // Subir imagen al bucket "ventas-fotos"
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await supabase
+      .storage
       .from('ventas-fotos')
       .upload(nombreArchivo, foto.buffer, {
         contentType: foto.mimetype,
@@ -46,25 +50,21 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
       return res.status(500).json({ error: 'Error al subir la foto', detalle: uploadError.message });
     }
 
-    // Obtener URL pública
-    const { data: publicUrlData } = supabase.storage
+    const { data: publicUrlData } = supabase
+      .storage
       .from('ventas-fotos')
       .getPublicUrl(nombreArchivo);
     const fotoUrl = publicUrlData.publicUrl;
-
     const fechaUTC = new Date().toISOString();
 
-    // Insertar en tabla "ventas"
     const { error: insertError } = await supabase
       .from('ventas')
-      .insert([
-        {
-          nombre_vendedor: vendedor,
-          numero_serie: serie,
-          foto_url: fotoUrl,
-          fecha: fechaUTC,
-        },
-      ]);
+      .insert([{
+        nombre_vendedor: vendedor,
+        numero_serie: serie,
+        foto_url: fotoUrl,
+        fecha: fechaUTC,
+      }]);
 
     if (insertError) {
       console.error("❌ Error al guardar venta:", insertError.message);
@@ -72,15 +72,19 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
     }
 
     res.json({ mensaje: '✅ Venta registrada correctamente' });
-
   } catch (error) {
     console.error("❌ Error inesperado:", error.message);
-    res.status(500).json({ error: 'Error inesperado en el servidor', detalle: error.message });
+    res.status(500).json({ error: 'Error inesperado', detalle: error.message });
   }
 });
 
-// ✅ Nueva ruta para ver ventas registradas
+// 🔐 Ruta protegida para ver ventas (requiere x-api-key en headers)
 app.get('/sales', async (req, res) => {
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey !== process.env.API_KEY) {
+    return res.status(403).json({ error: 'Acceso no autorizado' });
+  }
+
   try {
     const { data, error } = await supabase
       .from('ventas')
@@ -99,7 +103,7 @@ app.get('/sales', async (req, res) => {
   }
 });
 
-// Iniciar servidor
+// 🔷 Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
