@@ -8,30 +8,35 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-app.use(cors());
+app.use(cors()); // O personaliza: cors({ origin: 'https://lg-app-tau.vercel.app' }));
 app.use(express.json());
 
-// Cliente Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Multer
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Ruta para subir ventas
+app.get('/', (req, res) => {
+  res.send('✅ API activa — usa POST /ventas');
+});
+
 app.post('/ventas', upload.single('foto'), async (req, res) => {
   const { vendedor, serie } = req.body;
   const foto = req.file;
+
   try {
     if (!foto) return res.status(400).json({ error: 'No se recibió la imagen' });
 
     const nombreArchivo = `ventas/${Date.now()}-${foto.originalname}`;
     const { error: uploadError } = await supabase.storage
       .from('ventas-fotos')
-      .upload(nombreArchivo, foto.buffer, { contentType: foto.mimetype, upsert: false });
+      .upload(nombreArchivo, foto.buffer, {
+        contentType: foto.mimetype,
+        upsert: false,
+      });
 
     if (uploadError) {
       console.error("❌ Error al subir foto:", uploadError.message);
@@ -60,12 +65,6 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
   }
 });
 
-// Ruta de prueba
-app.get('/ping', (req, res) => {
-  res.send('pong');
-});
-
-// Iniciar servidor en puerto dinámico
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
