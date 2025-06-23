@@ -1,0 +1,7 @@
+# Evitar que esto se suba al repositorio
+node_modules/
+package-lock.json
+.env
+dist/
+build/
+uploads/
