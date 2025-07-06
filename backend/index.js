@@ -17,19 +17,17 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 // Función para validar nombre y serie
 async function validarDatos(nombreVendedor, numeroSerie) {
   try {
-    // Verifica si el vendedor está bloqueado
     const { data: bloqueado, error: errorBloqueado } = await supabase
       .from('vendedores_bloqueados')
-      .select('nombre')
-      .eq('nombre', nombreVendedor);
+      .select('nombre_vendedor')
+      .eq('nombre_vendedor', nombreVendedor);
 
     if (errorBloqueado) throw errorBloqueado;
 
-    if (Array.isArray(bloqueado) && bloqueado.length > 0) {
+    if (bloqueado && bloqueado.length > 0) {
       return { valido: false, mensaje: '⛔ Vendedor bloqueado. Contacta a administración.' };
     }
 
-    // Verifica si el vendedor está registrado
     const { data: vendedor, error: errorVendedor } = await supabase
       .from('vendedores_registrados')
       .select('nombre')
@@ -37,11 +35,10 @@ async function validarDatos(nombreVendedor, numeroSerie) {
 
     if (errorVendedor) throw errorVendedor;
 
-    if (!Array.isArray(vendedor) || vendedor.length === 0) {
+    if (!vendedor || vendedor.length === 0) {
       return { valido: false, mensaje: '❌ Vendedor no registrado.' };
     }
 
-    // Verifica si el número de serie es válido
     const { data: serie, error: errorSerie } = await supabase
       .from('series_validas')
       .select('codigo_serie')
@@ -49,18 +46,17 @@ async function validarDatos(nombreVendedor, numeroSerie) {
 
     if (errorSerie) throw errorSerie;
 
-    if (!Array.isArray(serie) || serie.length === 0) {
+    if (!serie || serie.length === 0) {
       return { valido: false, mensaje: '❌ Número de serie no válido.' };
     }
 
     return { valido: true };
-  } catch (error) {
-    console.error('Error en validación:', error);
-    return { valido: false, mensaje: 'Error interno en validación' };
+  } catch (err) {
+    console.error('🔴 Error en validarDatos:', err.message);
+    return { valido: false, mensaje: '❗ Error interno en validación' };
   }
 }
 
-// Contador de intentos fallidos (temporal en memoria)
 const intentosFallidos = {};
 
 app.post('/ventas', upload.single('foto'), async (req, res) => {
@@ -77,17 +73,18 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
     intentosFallidos[vendedor] = (intentosFallidos[vendedor] || 0) + 1;
 
     if (intentosFallidos[vendedor] >= 3) {
-      await supabase.from('vendedores_bloqueados').insert({ nombre: vendedor });
+      await supabase
+        .from('vendedores_bloqueados')
+        .insert({ nombre_vendedor: vendedor });
       return res.status(403).json({ error: '🚫 Has sido bloqueado por 3 intentos fallidos.' });
     }
 
-    return res.status(400).json({ error: `${resultado.mensaje} (Intento ${intentosFallidos[vendedor]}/3)` });
+    return res.status(400).json({
+      error: `${resultado.mensaje} (Intento ${intentosFallidos[vendedor]}/3)`,
+    });
   }
 
-  // Si es válido, reseteamos el contador y seguimos
   intentosFallidos[vendedor] = 0;
-
-  // Aquí puedes guardar la venta o la imagen si quieres
 
   return res.json({ mensaje: '✅ Venta registrada correctamente' });
 });
