@@ -16,37 +16,48 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SER
 
 // Función para validar nombre y serie
 async function validarDatos(nombreVendedor, numeroSerie) {
-  // Verifica si el vendedor está bloqueado
-  const { data: bloqueado } = await supabase
-    .from('vendedores_bloqueados')
-    .select('nombre')
-    .eq('nombre', nombreVendedor);
+  try {
+    // Verifica si el vendedor está bloqueado
+    const { data: bloqueado, error: errorBloqueado } = await supabase
+      .from('vendedores_bloqueados')
+      .select('nombre')
+      .eq('nombre', nombreVendedor);
 
-  if (bloqueado.length > 0) {
-    return { valido: false, mensaje: '⛔ Vendedor bloqueado. Contacta a administración.' };
+    if (errorBloqueado) throw errorBloqueado;
+
+    if (Array.isArray(bloqueado) && bloqueado.length > 0) {
+      return { valido: false, mensaje: '⛔ Vendedor bloqueado. Contacta a administración.' };
+    }
+
+    // Verifica si el vendedor está registrado
+    const { data: vendedor, error: errorVendedor } = await supabase
+      .from('vendedores_registrados')
+      .select('nombre')
+      .eq('nombre', nombreVendedor);
+
+    if (errorVendedor) throw errorVendedor;
+
+    if (!Array.isArray(vendedor) || vendedor.length === 0) {
+      return { valido: false, mensaje: '❌ Vendedor no registrado.' };
+    }
+
+    // Verifica si el número de serie es válido
+    const { data: serie, error: errorSerie } = await supabase
+      .from('series_validas')
+      .select('codigo_serie')
+      .eq('codigo_serie', numeroSerie);
+
+    if (errorSerie) throw errorSerie;
+
+    if (!Array.isArray(serie) || serie.length === 0) {
+      return { valido: false, mensaje: '❌ Número de serie no válido.' };
+    }
+
+    return { valido: true };
+  } catch (error) {
+    console.error('Error en validación:', error);
+    return { valido: false, mensaje: 'Error interno en validación' };
   }
-
-  // Verifica si el vendedor está registrado
-  const { data: vendedor } = await supabase
-    .from('vendedores_registrados')
-    .select('nombre')
-    .eq('nombre', nombreVendedor);
-
-  if (vendedor.length === 0) {
-    return { valido: false, mensaje: '❌ Vendedor no registrado.' };
-  }
-
-  // Verifica si el número de serie es válido
-  const { data: serie } = await supabase
-    .from('series_validas')
-    .select('codigo_serie')
-    .eq('codigo_serie', numeroSerie);
-
-  if (serie.length === 0) {
-    return { valido: false, mensaje: '❌ Número de serie no válido.' };
-  }
-
-  return { valido: true };
 }
 
 // Contador de intentos fallidos (temporal en memoria)
