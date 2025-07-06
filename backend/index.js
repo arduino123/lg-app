@@ -3,6 +3,7 @@ const multer = require('multer');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const dotenv = require('dotenv');
+const { v4: uuidv4 } = require('uuid');
 dotenv.config();
 
 const app = express();
@@ -79,36 +80,31 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
 
   intentosFallidos[vendedor] = 0;
 
-  // Guardar la foto en Supabase Storage
-  const timestamp = Date.now();
-  const fileName = `${vendedor}_${timestamp}.jpg`;
+  // Subida de la imagen al bucket 'ventas-fotos'
+  const fileName = `${uuidv4()}_${foto.originalname}`;
+  const filePath = `fotos/${fileName}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from('fotos_ventas')
-    .upload(fileName, foto.buffer, {
+  const { data: imageData, error: imageError } = await supabase.storage
+    .from('ventas-fotos')
+    .upload(filePath, foto.buffer, {
       contentType: foto.mimetype,
-      upsert: false,
+      upsert: false
     });
 
-  if (uploadError) {
-    console.error('Error al subir imagen:', uploadError.message);
+  if (imageError) {
+    console.error('Error al subir la imagen:', imageError.message);
     return res.status(500).json({ error: '❌ Error al subir la imagen a Supabase Storage.' });
   }
 
-  // Obtener URL pública
-  const { data: publicUrlData } = supabase.storage
-    .from('fotos_ventas')
-    .getPublicUrl(fileName);
+  const publicURL = supabase.storage.from('ventas-fotos').getPublicUrl(filePath).data.publicUrl;
 
-  const fotoUrl = publicUrlData?.publicUrl || '';
-
-  // Registrar la venta en Supabase con URL de foto y fecha
+  // Registro de la venta
   const { error: errorInsert } = await supabase.from('ventas').insert({
     nombre_vendedor: vendedor,
     numero_serie: serie,
-    foto_local: fileName,
-    foto_url: fotoUrl,
-    fecha: new Date().toISOString()
+    fecha: new Date().toISOString(),
+    foto_local: filePath,
+    foto_url: publicURL
   });
 
   if (errorInsert) {
