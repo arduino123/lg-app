@@ -1,7 +1,13 @@
-# Evitar que esto se suba al repositorio
+# Ignora dependencias
 node_modules/
 package-lock.json
+
+# Ignora variables de entorno
 .env
+
+# Ignora carpetas de build (si las usas)
 dist/
 build/
+
+# Ignora fotos o archivos subidos
 uploads/
