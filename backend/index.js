@@ -10,12 +10,18 @@ const app = express();
 const port = process.env.PORT || 8080;
 app.use(cors());
 
+// Limita a 10 MB
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+});
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-// Función para validar nombre y serie
+const intentosFallidos = {};
+
+// Validación
 async function validarDatos(nombreVendedor, numeroSerie) {
   try {
     const { data: bloqueado, error: errorBloqueado } = await supabase
@@ -55,64 +61,74 @@ async function validarDatos(nombreVendedor, numeroSerie) {
   }
 }
 
-const intentosFallidos = {};
-
+// Ruta de ventas
 app.post('/ventas', upload.single('foto'), async (req, res) => {
-  const { vendedor, serie } = req.body;
-  const foto = req.file;
+  try {
+    const { vendedor, serie } = req.body;
+    const foto = req.file;
 
-  if (!vendedor || !serie || !foto) {
-    return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
-  }
-
-  const resultado = await validarDatos(vendedor, serie);
-
-  if (!resultado.valido) {
-    intentosFallidos[vendedor] = (intentosFallidos[vendedor] || 0) + 1;
-
-    if (intentosFallidos[vendedor] >= 3) {
-      await supabase.from('vendedores_bloqueados').insert({ nombre_vendedor: vendedor });
-      return res.status(403).json({ error: '🚫 Has sido bloqueado por 3 intentos fallidos.' });
+    if (!vendedor || !serie || !foto) {
+      return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
     }
 
-    return res.status(400).json({ error: `${resultado.mensaje} (Intento ${intentosFallidos[vendedor]}/3)` });
-  }
+    const resultado = await validarDatos(vendedor, serie);
 
-  intentosFallidos[vendedor] = 0;
+    if (!resultado.valido) {
+      intentosFallidos[vendedor] = (intentosFallidos[vendedor] || 0) + 1;
 
-  // Subida de la imagen al bucket 'ventas-fotos'
-  const fileName = `${uuidv4()}_${foto.originalname}`;
-  const filePath = `fotos/${fileName}`;
+      if (intentosFallidos[vendedor] >= 3) {
+        await supabase.from('vendedores_bloqueados').insert({ nombre_vendedor: vendedor });
+        return res.status(403).json({ error: '🚫 Has sido bloqueado por 3 intentos fallidos.' });
+      }
 
-  const { data: imageData, error: imageError } = await supabase.storage
-    .from('ventas-fotos')
-    .upload(filePath, foto.buffer, {
-      contentType: foto.mimetype,
-      upsert: false
+      return res.status(400).json({ error: `${resultado.mensaje} (Intento ${intentosFallidos[vendedor]}/3)` });
+    }
+
+    // Reset de intentos
+    intentosFallidos[vendedor] = 0;
+
+    // Subir imagen al bucket
+    const extension = foto.originalname.split('.').pop();
+    const nombreUnico = `${uuidv4()}.${extension}`;
+    const { error: errorUpload } = await supabase.storage
+      .from('ventas-fotos')
+      .upload(nombreUnico, foto.buffer, {
+        contentType: foto.mimetype,
+      });
+
+    if (errorUpload) {
+      console.error('❌ Error al subir imagen:', errorUpload.message);
+      return res.status(500).json({ error: '❌ Error al subir la imagen a Supabase Storage.' });
+    }
+
+    // Obtener URL pública
+    const { data: urlData } = supabase.storage.from('ventas-fotos').getPublicUrl(nombreUnico);
+    const urlFoto = urlData.publicUrl;
+
+    // Registrar la venta
+    const { error: errorInsert } = await supabase.from('ventas').insert({
+      nombre_vendedor: vendedor,
+      numero_serie: serie,
+      foto_local: nombreUnico,
+      foto_url: urlFoto,
+      fecha: new Date().toISOString()
     });
 
-  if (imageError) {
-    console.error('Error al subir la imagen:', imageError.message);
-    return res.status(500).json({ error: '❌ Error al subir la imagen a Supabase Storage.' });
+    if (errorInsert) {
+      console.error('❌ Error al registrar venta:', errorInsert.message);
+      return res.status(500).json({ error: '❌ Error al registrar la venta en la base de datos.' });
+    }
+
+    return res.json({ mensaje: '✅ Venta registrada correctamente' });
+
+  } catch (error) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: '❌ La imagen excede el tamaño máximo permitido (10 MB).' });
+    }
+
+    console.error('❌ Error inesperado:', error.message);
+    return res.status(500).json({ error: '❌ Error inesperado en el servidor.' });
   }
-
-  const publicURL = supabase.storage.from('ventas-fotos').getPublicUrl(filePath).data.publicUrl;
-
-  // Registro de la venta
-  const { error: errorInsert } = await supabase.from('ventas').insert({
-    nombre_vendedor: vendedor,
-    numero_serie: serie,
-    fecha: new Date().toISOString(),
-    foto_local: filePath,
-    foto_url: publicURL
-  });
-
-  if (errorInsert) {
-    console.error('Error al registrar la venta:', errorInsert.message);
-    return res.status(500).json({ error: '❌ Error al registrar la venta en la base de datos.' });
-  }
-
-  return res.json({ mensaje: '✅ Venta registrada correctamente' });
 });
 
 app.listen(port, () => {
