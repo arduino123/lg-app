@@ -77,13 +77,38 @@ app.post('/ventas', upload.single('foto'), async (req, res) => {
     return res.status(400).json({ error: `${resultado.mensaje} (Intento ${intentosFallidos[vendedor]}/3)` });
   }
 
-  // Resetea el contador
   intentosFallidos[vendedor] = 0;
 
-  // 👇 REGISTRO DE LA VENTA
+  // Guardar la foto en Supabase Storage
+  const timestamp = Date.now();
+  const fileName = `${vendedor}_${timestamp}.jpg`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('fotos_ventas')
+    .upload(fileName, foto.buffer, {
+      contentType: foto.mimetype,
+      upsert: false,
+    });
+
+  if (uploadError) {
+    console.error('Error al subir imagen:', uploadError.message);
+    return res.status(500).json({ error: '❌ Error al subir la imagen a Supabase Storage.' });
+  }
+
+  // Obtener URL pública
+  const { data: publicUrlData } = supabase.storage
+    .from('fotos_ventas')
+    .getPublicUrl(fileName);
+
+  const fotoUrl = publicUrlData?.publicUrl || '';
+
+  // Registrar la venta en Supabase con URL de foto y fecha
   const { error: errorInsert } = await supabase.from('ventas').insert({
     nombre_vendedor: vendedor,
-    numero_serie: serie
+    numero_serie: serie,
+    foto_local: fileName,
+    foto_url: fotoUrl,
+    fecha: new Date().toISOString()
   });
 
   if (errorInsert) {
