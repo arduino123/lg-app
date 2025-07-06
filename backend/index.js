@@ -1,71 +1,86 @@
-require('dotenv').config();
-console.log("🧪 TEST_VARIABLE:", process.env.TEST_VARIABLE);
-console.log("🔑 KEY cargada:", process.env.SUPABASE_SERVICE_ROLE_KEY ? "OK" : "VACÍA");
-
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const dotenv = require('dotenv');
+dotenv.config();
 
 const app = express();
-app.use(cors()); // O personaliza: cors({ origin: 'https://lg-app-tau.vercel.app' }));
-app.use(express.json());
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const port = process.env.PORT || 8080;
+app.use(cors());
 
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({ storage: storage });
 
-app.get('/', (req, res) => {
-  res.send('✅ API activa — usa POST /ventas');
-});
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+
+// Función para validar nombre y serie
+async function validarDatos(nombreVendedor, numeroSerie) {
+  // Verifica si el vendedor está bloqueado
+  const { data: bloqueado } = await supabase
+    .from('vendedores_bloqueados')
+    .select('nombre')
+    .eq('nombre', nombreVendedor);
+
+  if (bloqueado.length > 0) {
+    return { valido: false, mensaje: '⛔ Vendedor bloqueado. Contacta a administración.' };
+  }
+
+  // Verifica si el vendedor está registrado
+  const { data: vendedor } = await supabase
+    .from('vendedores_registrados')
+    .select('nombre')
+    .eq('nombre', nombreVendedor);
+
+  if (vendedor.length === 0) {
+    return { valido: false, mensaje: '❌ Vendedor no registrado.' };
+  }
+
+  // Verifica si el número de serie es válido
+  const { data: serie } = await supabase
+    .from('series_validas')
+    .select('codigo_serie')
+    .eq('codigo_serie', numeroSerie);
+
+  if (serie.length === 0) {
+    return { valido: false, mensaje: '❌ Número de serie no válido.' };
+  }
+
+  return { valido: true };
+}
+
+// Contador de intentos fallidos (temporal en memoria)
+const intentosFallidos = {};
 
 app.post('/ventas', upload.single('foto'), async (req, res) => {
   const { vendedor, serie } = req.body;
   const foto = req.file;
 
-  try {
-    if (!foto) return res.status(400).json({ error: 'No se recibió la imagen' });
-
-    const nombreArchivo = `ventas/${Date.now()}-${foto.originalname}`;
-    const { error: uploadError } = await supabase.storage
-      .from('ventas-fotos')
-      .upload(nombreArchivo, foto.buffer, {
-        contentType: foto.mimetype,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error("❌ Error al subir foto:", uploadError.message);
-      return res.status(500).json({ error: 'Error al subir la foto', detalle: uploadError.message });
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from('ventas-fotos')
-      .getPublicUrl(nombreArchivo);
-    const fotoUrl = publicUrlData.publicUrl;
-    const fechaUTC = new Date().toISOString();
-
-    const { error: insertError } = await supabase
-      .from('ventas')
-      .insert([{ nombre_vendedor: vendedor, numero_serie: serie, foto_url: fotoUrl, fecha: fechaUTC }]);
-
-    if (insertError) {
-      console.error("❌ Error al guardar venta:", insertError.message);
-      return res.status(500).json({ error: 'Error al guardar la venta', detalle: insertError.message });
-    }
-
-    res.json({ mensaje: '✅ Venta registrada correctamente' });
-  } catch (error) {
-    console.error("❌ Error inesperado:", error.message);
-    res.status(500).json({ error: 'Error inesperado en el servidor', detalle: error.message });
+  if (!vendedor || !serie || !foto) {
+    return res.status(400).json({ error: 'Todos los campos son obligatorios.' });
   }
+
+  const resultado = await validarDatos(vendedor, serie);
+
+  if (!resultado.valido) {
+    intentosFallidos[vendedor] = (intentosFallidos[vendedor] || 0) + 1;
+
+    if (intentosFallidos[vendedor] >= 3) {
+      await supabase.from('vendedores_bloqueados').insert({ nombre: vendedor });
+      return res.status(403).json({ error: '🚫 Has sido bloqueado por 3 intentos fallidos.' });
+    }
+
+    return res.status(400).json({ error: `${resultado.mensaje} (Intento ${intentosFallidos[vendedor]}/3)` });
+  }
+
+  // Si es válido, reseteamos el contador y seguimos
+  intentosFallidos[vendedor] = 0;
+
+  // Aquí puedes guardar la venta o la imagen si quieres
+
+  return res.json({ mensaje: '✅ Venta registrada correctamente' });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+app.listen(port, () => {
+  console.log(`🚀 Servidor corriendo en puerto ${port}`);
 });
